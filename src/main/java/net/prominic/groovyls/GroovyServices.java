@@ -105,6 +105,11 @@ import net.prominic.groovyls.providers.WorkspaceSymbolProvider;
 import net.prominic.groovyls.util.FileContentsTracker;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
 import net.prominic.lsp.utils.Positions;
+import org.gradle.tooling.GradleConnector;
+import org.gradle.tooling.ProjectConnection;
+import org.gradle.tooling.model.DomainObjectSet;
+import org.gradle.tooling.model.eclipse.EclipseExternalDependency;
+import org.gradle.tooling.model.eclipse.EclipseProject;
 
 public class GroovyServices implements TextDocumentService, WorkspaceService, LanguageClientAware {
 	private static final Pattern PATTERN_CONSTRUCTOR_CALL = Pattern.compile(".*new \\w*$");
@@ -127,7 +132,23 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 
 	public void setWorkspaceRoot(Path workspaceRoot) {
 		this.workspaceRoot = workspaceRoot;
+		setupClasspath(workspaceRoot);
 		createOrUpdateCompilationUnit();
+	}
+
+	private void setupClasspath(Path workspaceRoot) {
+		GradleConnector connector = GradleConnector.newConnector()
+				.forProjectDirectory(workspaceRoot.toFile());
+		try (ProjectConnection connection = connector.connect()) {
+			EclipseProject build = connection.model(EclipseProject.class).get();
+			DomainObjectSet<? extends EclipseExternalDependency> classpath = build.getClasspath();
+			List<String> dependencies = classpath.stream()
+					.map(dependency -> dependency.getFile().getAbsolutePath())
+					.collect(Collectors.toList());
+			compilationUnitFactory.setAdditionalClasspathList(dependencies);
+		} catch (Exception e) {
+			System.err.println(e.getMessage());
+		}
 	}
 
 	@Override
